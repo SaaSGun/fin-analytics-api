@@ -5,6 +5,7 @@ etl/
 docs/
 tests/
 loadtest/
+terraform/
 .claude/
 .git/
 .gitignore

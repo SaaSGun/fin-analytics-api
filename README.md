@@ -108,6 +108,15 @@ ruff + pytest on every push and PR, and deploys to Cloud Run on pushes to
 Federation, no stored service-account key). Details and one-time setup:
 [`docs/ci_cd.md`](docs/ci_cd.md).
 
+## Infrastructure as Code
+
+The GCP setup (service accounts, project IAM bindings, Workload Identity
+Federation, BigQuery dataset, Cloud Run's static config) is codified in
+[`terraform/`](terraform/) rather than living only in `gcloud` command
+history. It deliberately doesn't manage the deployed container
+image/revision (CI/CD owns that) or table schemas/rows (the ETL scripts
+own those). Setup and import instructions: [`docs/terraform.md`](docs/terraform.md).
+
 ## Deployment (Cloud Run)
 
 Live at `https://fin-analytics-api-1089997989086.europe-west4.run.app`,
