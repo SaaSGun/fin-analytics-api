@@ -1,3 +1,14 @@
+# --- Project-specific ---
+# Local Claude Code context/notes: must NEVER be committed.
+.claude/
+.env
+data/raw/
+data/processed/
+*.parquet
+.vscode/
+loadtest/results*
+
+# --- GitHub Python template ---
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

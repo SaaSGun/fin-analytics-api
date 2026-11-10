@@ -1,0 +1,1114 @@
+openapi: 3.1.0
+info:
+  title: Fin Analytics API
+  description: Analytics API over a BigQuery warehouse of security reference data,
+    market prices, fundamentals, ESG risk scores, and model-portfolio holdings, built
+    for portfolio manager and ESG team workflows.
+  version: 0.1.0
+paths:
+  /securities/{ticker}:
+    get:
+      tags:
+      - securities
+      summary: Security 360 profile
+      description: Reference data + latest fundamentals + latest ESG + latest price
+        for one security.
+      operationId: get_security_securities__ticker__get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: ticker
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Ticker
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope_SecurityProfile_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /securities/{ticker}/prices:
+    get:
+      tags:
+      - securities
+      summary: Historical daily OHLCV
+      operationId: get_prices_securities__ticker__prices_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: ticker
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Ticker
+      - name: start
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          description: inclusive start date
+          title: Start
+        description: inclusive start date
+      - name: end
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          description: inclusive end date
+          title: End
+        description: inclusive end date
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Opaque pagination cursor, taken from a previous response's
+            meta.pagination.next_cursor
+          title: Cursor
+        description: Opaque pagination cursor, taken from a previous response's meta.pagination.next_cursor
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          description: max rows to return (1-500)
+          default: 50
+          title: Limit
+        description: max rows to return (1-500)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope_list_PricePoint__'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /portfolios:
+    get:
+      tags:
+      - portfolios
+      summary: List all portfolios
+      operationId: list_portfolios_portfolios_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Opaque pagination cursor, taken from a previous response's
+            meta.pagination.next_cursor
+          title: Cursor
+        description: Opaque pagination cursor, taken from a previous response's meta.pagination.next_cursor
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          description: max rows to return (1-500)
+          default: 50
+          title: Limit
+        description: max rows to return (1-500)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope_list_PortfolioSummary__'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /portfolios/{portfolio_id}/holdings:
+    get:
+      tags:
+      - portfolios
+      summary: Current holdings
+      operationId: get_holdings_portfolios__portfolio_id__holdings_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: portfolio_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Portfolio Id
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Opaque pagination cursor, taken from a previous response's
+            meta.pagination.next_cursor
+          title: Cursor
+        description: Opaque pagination cursor, taken from a previous response's meta.pagination.next_cursor
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          description: max rows to return (1-500)
+          default: 50
+          title: Limit
+        description: max rows to return (1-500)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope_list_HoldingRow__'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /portfolios/{portfolio_id}/exposures:
+    get:
+      tags:
+      - portfolios
+      summary: Sector active weight vs. benchmark
+      operationId: get_sector_exposures_portfolios__portfolio_id__exposures_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: portfolio_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Portfolio Id
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Opaque pagination cursor, taken from a previous response's
+            meta.pagination.next_cursor
+          title: Cursor
+        description: Opaque pagination cursor, taken from a previous response's meta.pagination.next_cursor
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          description: max rows to return (1-500)
+          default: 50
+          title: Limit
+        description: max rows to return (1-500)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope_list_SectorExposure__'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /portfolios/{portfolio_id}/performance:
+    get:
+      tags:
+      - portfolios
+      summary: Cumulative return vs. benchmark (static current-weight approximation)
+      description: 'Approximates performance by holding today''s portfolio/benchmark
+        weights constant
+
+        over the requested lookback window and compounding daily security returns.
+        This is
+
+        a simplification for demo purposes (no historical weight drift / rebalancing
+        is
+
+        modelled) and should not be treated as an audited performance return.'
+      operationId: get_performance_portfolios__portfolio_id__performance_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: portfolio_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Portfolio Id
+      - name: start
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          description: inclusive start date; defaults to earliest available
+          title: Start
+        description: inclusive start date; defaults to earliest available
+      - name: end
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          description: inclusive end date; defaults to latest available
+          title: End
+        description: inclusive end date; defaults to latest available
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Opaque pagination cursor, taken from a previous response's
+            meta.pagination.next_cursor
+          title: Cursor
+        description: Opaque pagination cursor, taken from a previous response's meta.pagination.next_cursor
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          description: max rows to return (1-500)
+          default: 50
+          title: Limit
+        description: max rows to return (1-500)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope_list_PerformancePoint__'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /portfolios/{portfolio_id}/esg-summary:
+    get:
+      tags:
+      - esg
+      summary: Weighted ESG risk profile vs. benchmark
+      operationId: get_esg_summary_portfolios__portfolio_id__esg_summary_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: portfolio_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Portfolio Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope_ESGPortfolioSummary_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /portfolios/{portfolio_id}/esg-laggards:
+    get:
+      tags:
+      - esg
+      summary: Largest weighted ESG risk contributors in a portfolio
+      operationId: get_esg_laggards_portfolios__portfolio_id__esg_laggards_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: portfolio_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Portfolio Id
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Opaque pagination cursor, taken from a previous response's
+            meta.pagination.next_cursor
+          title: Cursor
+        description: Opaque pagination cursor, taken from a previous response's meta.pagination.next_cursor
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: max rows to return (1-100)
+          default: 10
+          title: Limit
+        description: max rows to return (1-100)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope_list_ESGLaggard__'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /esg/screen:
+    get:
+      tags:
+      - esg
+      summary: Screen the universe by sector / ESG risk / market cap
+      operationId: screen_securities_esg_screen_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: sector
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sector
+      - name: max_risk_score
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: max total ESG risk score (lower = less risky)
+          title: Max Risk Score
+        description: max total ESG risk score (lower = less risky)
+      - name: min_market_cap
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Min Market Cap
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Opaque pagination cursor, taken from a previous response's
+            meta.pagination.next_cursor
+          title: Cursor
+        description: Opaque pagination cursor, taken from a previous response's meta.pagination.next_cursor
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          description: max rows to return (1-500)
+          default: 50
+          title: Limit
+        description: max rows to return (1-500)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope_list_ScreenResult__'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /benchmarks/{benchmark_id}/constituents:
+    get:
+      tags:
+      - benchmarks
+      summary: Benchmark constituent weights
+      operationId: get_constituents_benchmarks__benchmark_id__constituents_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: benchmark_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Benchmark Id
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Opaque pagination cursor, taken from a previous response's
+            meta.pagination.next_cursor
+          title: Cursor
+        description: Opaque pagination cursor, taken from a previous response's meta.pagination.next_cursor
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          description: max rows to return (1-500)
+          default: 50
+          title: Limit
+        description: max rows to return (1-500)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope_list_BenchmarkConstituent__'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /health:
+    get:
+      tags:
+      - meta
+      summary: Health
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /health/ready:
+    get:
+      tags:
+      - meta
+      summary: Health Ready
+      operationId: health_ready_health_ready_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+components:
+  schemas:
+    BenchmarkConstituent:
+      properties:
+        ticker:
+          type: string
+          title: Ticker
+        company_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Company Name
+        gics_sector:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Gics Sector
+        weight:
+          type: number
+          title: Weight
+      type: object
+      required:
+      - ticker
+      - weight
+      title: BenchmarkConstituent
+    ESGLaggard:
+      properties:
+        ticker:
+          type: string
+          title: Ticker
+        company_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Company Name
+        gics_sector:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Gics Sector
+        weight:
+          type: number
+          title: Weight
+        total_esg_risk_score:
+          type: number
+          title: Total Esg Risk Score
+        risk_category:
+          type: string
+          title: Risk Category
+        weighted_risk_contribution:
+          type: number
+          title: Weighted Risk Contribution
+      type: object
+      required:
+      - ticker
+      - weight
+      - total_esg_risk_score
+      - risk_category
+      - weighted_risk_contribution
+      title: ESGLaggard
+    ESGPortfolioSummary:
+      properties:
+        portfolio_id:
+          type: string
+          title: Portfolio Id
+        portfolio_weighted_esg_risk_score:
+          type: number
+          title: Portfolio Weighted Esg Risk Score
+        benchmark_weighted_esg_risk_score:
+          type: number
+          title: Benchmark Weighted Esg Risk Score
+        portfolio_weighted_environment_score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Portfolio Weighted Environment Score
+        portfolio_weighted_social_score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Portfolio Weighted Social Score
+        portfolio_weighted_governance_score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Portfolio Weighted Governance Score
+        risk_category_weights:
+          additionalProperties:
+            type: number
+          type: object
+          title: Risk Category Weights
+      type: object
+      required:
+      - portfolio_id
+      - portfolio_weighted_esg_risk_score
+      - benchmark_weighted_esg_risk_score
+      - risk_category_weights
+      title: ESGPortfolioSummary
+    Envelope_ESGPortfolioSummary_:
+      properties:
+        data:
+          $ref: '#/components/schemas/ESGPortfolioSummary'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      type: object
+      required:
+      - data
+      title: Envelope[ESGPortfolioSummary]
+    Envelope_SecurityProfile_:
+      properties:
+        data:
+          $ref: '#/components/schemas/SecurityProfile'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      type: object
+      required:
+      - data
+      title: Envelope[SecurityProfile]
+    Envelope_list_BenchmarkConstituent__:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/BenchmarkConstituent'
+          type: array
+          title: Data
+        meta:
+          $ref: '#/components/schemas/Meta'
+      type: object
+      required:
+      - data
+      title: Envelope[list[BenchmarkConstituent]]
+    Envelope_list_ESGLaggard__:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/ESGLaggard'
+          type: array
+          title: Data
+        meta:
+          $ref: '#/components/schemas/Meta'
+      type: object
+      required:
+      - data
+      title: Envelope[list[ESGLaggard]]
+    Envelope_list_HoldingRow__:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/HoldingRow'
+          type: array
+          title: Data
+        meta:
+          $ref: '#/components/schemas/Meta'
+      type: object
+      required:
+      - data
+      title: Envelope[list[HoldingRow]]
+    Envelope_list_PerformancePoint__:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/PerformancePoint'
+          type: array
+          title: Data
+        meta:
+          $ref: '#/components/schemas/Meta'
+      type: object
+      required:
+      - data
+      title: Envelope[list[PerformancePoint]]
+    Envelope_list_PortfolioSummary__:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/PortfolioSummary'
+          type: array
+          title: Data
+        meta:
+          $ref: '#/components/schemas/Meta'
+      type: object
+      required:
+      - data
+      title: Envelope[list[PortfolioSummary]]
+    Envelope_list_PricePoint__:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/PricePoint'
+          type: array
+          title: Data
+        meta:
+          $ref: '#/components/schemas/Meta'
+      type: object
+      required:
+      - data
+      title: Envelope[list[PricePoint]]
+    Envelope_list_ScreenResult__:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/ScreenResult'
+          type: array
+          title: Data
+        meta:
+          $ref: '#/components/schemas/Meta'
+      type: object
+      required:
+      - data
+      title: Envelope[list[ScreenResult]]
+    Envelope_list_SectorExposure__:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/SectorExposure'
+          type: array
+          title: Data
+        meta:
+          $ref: '#/components/schemas/Meta'
+      type: object
+      required:
+      - data
+      title: Envelope[list[SectorExposure]]
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HoldingRow:
+      properties:
+        ticker:
+          type: string
+          title: Ticker
+        company_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Company Name
+        gics_sector:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Gics Sector
+        weight:
+          type: number
+          title: Weight
+        shares:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Shares
+        market_value:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Market Value
+      type: object
+      required:
+      - ticker
+      - weight
+      title: HoldingRow
+    Meta:
+      properties:
+        pagination:
+          anyOf:
+          - $ref: '#/components/schemas/Pagination'
+          - type: 'null'
+      type: object
+      title: Meta
+    Pagination:
+      properties:
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Next Cursor
+        limit:
+          type: integer
+          title: Limit
+        has_more:
+          type: boolean
+          title: Has More
+      type: object
+      required:
+      - limit
+      - has_more
+      title: Pagination
+    PerformancePoint:
+      properties:
+        trade_date:
+          type: string
+          format: date
+          title: Trade Date
+        portfolio_cum_return:
+          type: number
+          title: Portfolio Cum Return
+        benchmark_cum_return:
+          type: number
+          title: Benchmark Cum Return
+      type: object
+      required:
+      - trade_date
+      - portfolio_cum_return
+      - benchmark_cum_return
+      title: PerformancePoint
+    PortfolioSummary:
+      properties:
+        portfolio_id:
+          type: string
+          title: Portfolio Id
+        portfolio_name:
+          type: string
+          title: Portfolio Name
+        strategy:
+          type: string
+          title: Strategy
+        aum_usd:
+          type: number
+          title: Aum Usd
+        cash_weight:
+          type: number
+          title: Cash Weight
+        benchmark_id:
+          type: string
+          title: Benchmark Id
+        as_of_date:
+          type: string
+          format: date
+          title: As Of Date
+      type: object
+      required:
+      - portfolio_id
+      - portfolio_name
+      - strategy
+      - aum_usd
+      - cash_weight
+      - benchmark_id
+      - as_of_date
+      title: PortfolioSummary
+    PricePoint:
+      properties:
+        trade_date:
+          type: string
+          format: date
+          title: Trade Date
+        open:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Open
+        high:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: High
+        low:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Low
+        close:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Close
+        volume:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Volume
+      type: object
+      required:
+      - trade_date
+      title: PricePoint
+    ScreenResult:
+      properties:
+        ticker:
+          type: string
+          title: Ticker
+        company_name:
+          type: string
+          title: Company Name
+        gics_sector:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Gics Sector
+        market_cap:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Market Cap
+        total_esg_risk_score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Total Esg Risk Score
+        risk_category:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Risk Category
+      type: object
+      required:
+      - ticker
+      - company_name
+      title: ScreenResult
+    SectorExposure:
+      properties:
+        gics_sector:
+          type: string
+          title: Gics Sector
+        portfolio_weight:
+          type: number
+          title: Portfolio Weight
+        benchmark_weight:
+          type: number
+          title: Benchmark Weight
+        active_weight:
+          type: number
+          title: Active Weight
+      type: object
+      required:
+      - gics_sector
+      - portfolio_weight
+      - benchmark_weight
+      - active_weight
+      title: SectorExposure
+    SecurityProfile:
+      properties:
+        ticker:
+          type: string
+          title: Ticker
+        company_name:
+          type: string
+          title: Company Name
+        gics_sector:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Gics Sector
+        gics_sub_industry:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Gics Sub Industry
+        hq_state:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Hq State
+        market_cap:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Market Cap
+        trailing_pe:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Trailing Pe
+        forward_pe:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Forward Pe
+        dividend_yield:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Dividend Yield
+        beta:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Beta
+        last_close:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Last Close
+        last_trade_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Last Trade Date
+        total_esg_risk_score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Total Esg Risk Score
+        environment_risk_score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Environment Risk Score
+        social_risk_score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Social Risk Score
+        governance_risk_score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Governance Risk Score
+        esg_risk_category:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Esg Risk Category
+        esg_source:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Esg Source
+      type: object
+      required:
+      - ticker
+      - company_name
+      title: SecurityProfile
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+  securitySchemes:
+    APIKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key

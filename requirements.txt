@@ -1,0 +1,14 @@
+pandas
+pyarrow
+requests
+lxml
+beautifulsoup4
+html5lib
+yfinance
+google-cloud-bigquery
+db-dtypes
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-dotenv

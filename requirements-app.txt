@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-dotenv
+google-cloud-bigquery
+requests
+db-dtypes
+pandas
+pyarrow

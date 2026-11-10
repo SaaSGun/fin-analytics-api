@@ -1,0 +1,9 @@
+extend-exclude = ["data"]
+
+[lint.flake8-bugbear]
+# FastAPI's Query(...) in parameter defaults is the framework's idiom, not a bug.
+extend-immutable-calls = ["fastapi.Query"]
+
+[lint.per-file-ignores]
+# Unpacking a tuple and asserting on only some parts is normal in tests.
+"tests/**" = ["RUF059"]
