@@ -29,6 +29,10 @@ resource "google_cloud_run_v2_service" "fin_analytics_api" {
           cpu    = "1000m"
           memory = "512Mi"
         }
+        # CPU only while handling requests (request-based billing). Unset,
+        # this could flip to always-allocated CPU and cost more.
+        cpu_idle          = true
+        startup_cpu_boost = true
       }
 
       startup_probe {
@@ -72,6 +76,12 @@ resource "google_cloud_run_v2_service" "fin_analytics_api" {
       template[0].annotations,
       client,
       client_version,
+      # Written by `gcloud run deploy --source` on every deploy (build id,
+      # source zip) - owned by CI/CD like the image.
+      build_config,
+      # Service-level scaling defaults (0/0); per-revision max instances
+      # is managed in template.scaling above.
+      scaling,
     ]
   }
 }
