@@ -14,6 +14,8 @@ locals {
     "sts.googleapis.com",
     "storage.googleapis.com",
     "logging.googleapis.com",
+    # Needed by Terraform itself (data.google_project, project IAM members).
+    "cloudresourcemanager.googleapis.com",
   ]
 }
 

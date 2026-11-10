@@ -52,6 +52,14 @@ gcloud storage buckets create gs://fin-analytics-api-1089997989086-tfstate --pro
 gcloud storage buckets update gs://fin-analytics-api-1089997989086-tfstate --versioning
 ```
 
+Terraform itself also needs the Cloud Resource Manager API (to read the
+project number and manage project-level IAM). `gcloud` never needed it, so
+it may not be enabled yet:
+
+```
+gcloud services enable cloudresourcemanager.googleapis.com --project fin-analytics-api
+```
+
 Then, from `terraform/`:
 
 ```
@@ -101,6 +109,7 @@ terraform import 'google_project_service.this["iamcredentials.googleapis.com"]' 
 terraform import 'google_project_service.this["sts.googleapis.com"]' fin-analytics-api/sts.googleapis.com
 terraform import 'google_project_service.this["storage.googleapis.com"]' fin-analytics-api/storage.googleapis.com
 terraform import 'google_project_service.this["logging.googleapis.com"]' fin-analytics-api/logging.googleapis.com
+terraform import 'google_project_service.this["cloudresourcemanager.googleapis.com"]' fin-analytics-api/cloudresourcemanager.googleapis.com
 
 terraform import google_project_iam_member.fin_api_run_bq_viewer "fin-analytics-api roles/bigquery.dataViewer serviceAccount:fin-api-run@fin-analytics-api.iam.gserviceaccount.com"
 terraform import google_project_iam_member.fin_api_run_bq_job_user "fin-analytics-api roles/bigquery.jobUser serviceAccount:fin-api-run@fin-analytics-api.iam.gserviceaccount.com"
