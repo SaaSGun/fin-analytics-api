@@ -113,7 +113,9 @@ Reference data + latest fundamentals + latest ESG scores + latest close in
 one call — the "security profile" screen a PM or ESG analyst opens first.
 - **Response**: `data` = `SecurityProfile` (sector/sub-industry, market cap,
   PE, dividend yield, beta, last close, ESG total/E/S/G risk scores, risk
-  category, data source). `meta.pagination` = `null`.
+  category, data source). `meta.pagination` = `null`. Fundamentals, ESG
+  and price fields are `null` for tickers in the security master that have
+  no data in those tables (currently 403 of the 503).
 - **Errors**: 404 if ticker not in the security master.
 
 ## 2. `GET /securities/{ticker}/prices` — Historical OHLCV (PM)

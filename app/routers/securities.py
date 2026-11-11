@@ -1,5 +1,6 @@
 from datetime import date
 
+import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.auth import require_scopes
@@ -42,7 +43,11 @@ def get_security(ticker: str):
     df = run_query(sql, params=[scalar_param("ticker", ticker.upper())])
     if df.empty:
         raise HTTPException(status_code=404, detail=f"ticker '{ticker}' not found")
-    return Envelope(data=SecurityProfile(**df.iloc[0].to_dict()))
+    # Tickers in the security master without fundamentals/ESG/price rows get
+    # NULLs from the LEFT JOINs, which pandas turns into NaN/NaT. Pydantic
+    # can't validate NaT as a date and JSON can't encode NaN, so map them to None.
+    row = {k: None if pd.isna(v) else v for k, v in df.iloc[0].to_dict().items()}
+    return Envelope(data=SecurityProfile(**row))
 
 
 @router.get("/{ticker}/prices", response_model=Envelope[list[PricePoint]], summary="Historical daily OHLCV")

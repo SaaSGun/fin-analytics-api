@@ -24,6 +24,7 @@ import uuid
 from contextvars import ContextVar
 
 from fastapi import Request
+from fastapi.responses import PlainTextResponse
 
 from app.config import get_settings
 
@@ -66,13 +67,16 @@ async def request_logging_middleware(request: Request, call_next):
     token = _request_ctx.set(ctx)
 
     start = time.perf_counter()
-    status, error = 500, None  # 500 if call_next raises - what ServerErrorMiddleware will answer
+    status, error = 500, None
     try:
         response = await call_next(request)
         status = response.status_code
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - last-resort handler; traceback is logged below
+        # Answer the 500 here rather than re-raising to Starlette's outer
+        # ServerErrorMiddleware, so the response still gets X-Request-ID. The
+        # traceback goes into the log line below (exc_info).
         error = exc
-        raise
+        response = PlainTextResponse("Internal Server Error", status_code=500)
     finally:
         level = logging.ERROR if status >= 500 else logging.WARNING if status >= 400 else logging.INFO
         logger.log(
