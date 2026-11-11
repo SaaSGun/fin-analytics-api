@@ -21,6 +21,8 @@ from google.api_core.exceptions import NotFound
 
 from app.bigquery_client import get_client
 from app.config import get_settings
+from app.observability import set_client_name
+from app.rate_limit import check_rate_limit
 
 CACHE_TTL_SECONDS = 300
 
@@ -57,7 +59,7 @@ def _cached_keys() -> dict[str, dict]:
 
 
 def require_scopes(*required_scopes: str):
-    """FastAPI dependency factory: raises 401/403, else returns the caller's client_name."""
+    """FastAPI dependency factory: raises 401/403/429, else returns the caller's client_name."""
     required = set(required_scopes)
 
     def _dependency(api_key: str | None = Security(_api_key_header)) -> str:
@@ -66,8 +68,10 @@ def require_scopes(*required_scopes: str):
         record = _cached_keys().get(hash_key(api_key))
         if record is None:
             raise HTTPException(status_code=401, detail="invalid API key")
+        set_client_name(record["client_name"])
         if not required.issubset(record["scopes"]):
             raise HTTPException(status_code=403, detail="insufficient scope")
+        check_rate_limit(record["client_name"])
         return record["client_name"]
 
     return _dependency

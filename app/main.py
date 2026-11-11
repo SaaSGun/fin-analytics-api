@@ -4,7 +4,10 @@ from fastapi.responses import JSONResponse
 from google.api_core.exceptions import RetryError
 
 from app.bigquery_client import get_client
+from app.observability import request_logging_middleware, setup_logging
 from app.routers import benchmarks, esg, portfolios, securities
+
+setup_logging()
 
 app = FastAPI(
     title="Fin Analytics API",
@@ -25,6 +28,7 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+app.middleware("http")(request_logging_middleware)
 
 @app.exception_handler(RetryError)
 async def bigquery_retries_exhausted(request: Request, exc: RetryError):

@@ -40,6 +40,26 @@ write endpoints (none exist yet — every current route is `GET`).
 Granted scopes are cached in-process for 5 minutes, so revoking a key
 can take up to that long to take effect on an already-warm instance.
 
+## Rate limiting
+
+Each API client gets a token bucket: 5 requests/s sustained, bursts of up
+to 20 (`RATE_LIMIT_PER_SECOND` / `RATE_LIMIT_BURST` env vars; see
+[`app/rate_limit.py`](../app/rate_limit.py)). Over the limit returns `429`
+with a `Retry-After` header. Limits are tracked per Cloud Run instance, so
+a client spread over several instances can exceed its nominal limit. That's
+accepted here: the limiter is mainly a cost brake on BigQuery queries, not
+a hard quota. `/health*` is not rate-limited.
+
+## Request IDs & logging
+
+Every response carries an `X-Request-ID` header, echoing the caller's own
+`X-Request-ID` if it sent one. Each request writes one structured JSON log
+line (method, URL, status, latency, client, request id), and each billed
+BigQuery query writes another (bytes processed, slot time, duration, job
+id). Both are tied to the request's Cloud Trace id, so they group under
+the request in Cloud Logging. See
+[`app/observability.py`](../app/observability.py).
+
 ## Response envelope & pagination
 
 Every endpoint — singleton or collection — returns the same top-level

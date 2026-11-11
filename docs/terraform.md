@@ -136,3 +136,18 @@ in front of real (if synthetic) data and a live service.
 `1089997989086` is the project number
 (`gcloud projects describe fin-analytics-api --format="value(projectNumber)"`),
 same as in `docs/ci_cd.md` and `.github/workflows/ci.yml`.
+
+## Log-based metrics (`observability.tf`)
+
+Two log-based metrics over the app's structured logs. Unlike everything
+above, these are **new resources, not imports**, so `terraform plan` shows
+`2 to add` and they need a `terraform apply` to exist:
+
+- `fin_api/rate_limited_requests`: count of 429s, by `client_name`.
+- `fin_api/bigquery_bytes_processed`: distribution of bytes processed per
+  BigQuery query, by `client_name` (on-demand BigQuery bills by bytes
+  processed).
+
+Find them in Metrics Explorer under `logging.googleapis.com/user/fin_api/...`.
+They only count logs written after creation, and only from a revision
+that already runs the structured-logging code.

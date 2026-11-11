@@ -1,4 +1,5 @@
 import datetime
+import logging
 import threading
 import time
 from functools import lru_cache
@@ -8,6 +9,8 @@ from google.cloud import bigquery
 from google.cloud.bigquery.retry import DEFAULT_JOB_RETRY, DEFAULT_RETRY
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 # Under load this service's throughput ceiling is BigQuery's API rate limit
 # (~100 requests/s per caller identity, shared by every instance), not
@@ -69,12 +72,29 @@ def run_query(sql: str, params: list | None = None):
 
     client = get_client()
     job_config = bigquery.QueryJobConfig(query_parameters=params)
-    df = client.query_and_wait(
+    start = time.perf_counter()
+    rows = client.query_and_wait(
         sql,
         job_config=job_config,
         retry=DEFAULT_RETRY.with_timeout(BQ_RETRY_TIMEOUT_SECONDS),
         job_retry=DEFAULT_JOB_RETRY.with_timeout(BQ_RETRY_TIMEOUT_SECONDS),
-    ).to_dataframe()
+    )
+    df = rows.to_dataframe()
+    # One line per billed query (result-cache hits above cost nothing and
+    # aren't logged). Bytes processed is what on-demand pricing charges for.
+    logger.info(
+        "bigquery query",
+        extra={
+            "fields": {
+                "event": "bigquery_query",
+                "bytes_processed": rows.total_bytes_processed,
+                "slot_millis": rows.slot_millis,
+                "duration_ms": round((time.perf_counter() - start) * 1000),
+                "job_id": rows.job_id,
+                "query_id": rows.query_id,
+            }
+        },
+    )
 
     with _result_cache_lock:
         _result_cache.pop(key, None)  # re-insert at the end, so dict order stays oldest-first

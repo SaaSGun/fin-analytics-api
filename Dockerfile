@@ -11,4 +11,5 @@ COPY main.py .
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8080
 
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# --no-access-log: app/observability.py writes one structured log per request instead.
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --no-access-log"]
