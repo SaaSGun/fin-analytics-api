@@ -26,15 +26,34 @@ the API's per-instance result cache and really hits BigQuery. Stats are
 then grouped by route (e.g. `/securities/[ticker]/prices`) instead of by
 full URL. `/securities/{ticker}` takes no params and still cycles through
 the 10 tickers, so it stays mostly cached in this mode too.
+
+Multi-client mode: `set LOAD_TEST_API_KEYS=key1,key2,...` (comma-separated,
+takes priority over LOAD_TEST_API_KEY) round-robins a distinct key across
+simulated users at spawn time, so each one keeps its own rate-limit bucket
+instead of every user sharing a single client's budget. Use this to test
+aggregate throughput under many legitimate clients instead of one client
+tripping its own 429s.
 """
 import datetime
+import itertools
 import os
 import random
+import threading
 
 from locust import HttpUser, between, task
 
 API_KEY = os.environ.get("LOAD_TEST_API_KEY", "")
+API_KEYS = [k.strip() for k in os.environ.get("LOAD_TEST_API_KEYS", "").split(",") if k.strip()]
 VARY_PARAMS = os.environ.get("LOAD_TEST_VARY_PARAMS") == "1"
+
+_key_lock = threading.Lock()
+_key_counter = itertools.count()
+
+
+def _next_key() -> str:
+    with _key_lock:
+        idx = next(_key_counter)
+    return API_KEYS[idx % len(API_KEYS)]
 
 # market_prices coverage in the loaded data.
 DATA_START, DATA_END = datetime.date(2024, 11, 7), datetime.date(2026, 11, 6)
@@ -63,7 +82,8 @@ class FinApiUser(HttpUser):
     wait_time = between(0.2, 1.0)
 
     def on_start(self):
-        self.client.headers.update({"X-API-Key": API_KEY})
+        key = _next_key() if API_KEYS else API_KEY
+        self.client.headers.update({"X-API-Key": key})
 
     @task(3)
     def health(self):
