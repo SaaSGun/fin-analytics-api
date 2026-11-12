@@ -19,7 +19,7 @@ PROCESSED_DIR = Path(__file__).resolve().parents[1] / "data" / "processed"
 
 PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "fin-analytics-api")
 DATASET = os.environ.get("BQ_DATASET", "fin_analytics")
-LOCATION = os.environ.get("BQ_LOCATION", "US")
+LOCATION = os.environ.get("BQ_LOCATION", "europe-west4")
 
 TABLES = {
     "security_master": "ticker",
