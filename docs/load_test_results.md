@@ -79,3 +79,90 @@ queries are served from the cache and aren't limited by it. If real
 traffic approached that ceiling, the next steps would be precomputing hot
 results or moving the serving path to a database built for request
 serving.
+
+## Post rate-limiting validation (2026-11-11)
+
+After adding per-client rate limiting (5 req/s, burst 20, per instance) and
+fixing two bugs found while verifying it (a 500 on tickers missing
+fundamentals/ESG/price data, and missing `X-Request-ID` on 500s), ran two
+final passes against the then-current revision
+(`fin-analytics-api-00017-9lh`) with one load-test API key.
+
+**Pass A — realistic single-client load** (3 users, ~1.5 min, repetitive
+params, ~3.8 req/s, under the rate limit): 242 requests, **0 failures**.
+Median 27ms, p95 220ms, p98 330ms. A handful of requests up to ~8s coincided
+with a single cold-start event (multiple endpoints, including `/health`,
+spiked together) — not a BigQuery or rate-limiting issue.
+
+**Pass B — deliberate 150-user burst**, same single API key, same mix: of
+25,319 requests, 21,673 got a `429 rate limit exceeded` (clean, with
+`Retry-After`) and 3,737 succeeded — **zero 503s, zero other errors**.
+Locust itself reported response times up to 47.7s, but cross-checking Cloud
+Run's own server-side request logs (`httpRequest.latency`, which Cloud Run
+promotes to a top-level `LogEntry` field — confirms the assumption noted in
+`terraform/observability.tf`) for the full test window showed a **true
+max of 178ms** across all 25,410 server-side log entries. The Locust-side
+outliers are the same client/local-proxy artifact documented for pass 9/10
+above (150 concurrent connections through a laptop-run `gcloud run services
+proxy`), not a server regression.
+
+**Conclusion**: the rate limiter does exactly what it's designed to do —
+protect the service (and the BigQuery budget) from a single noisy or
+misbehaving client without ever reintroducing the old retry-storm tail
+latency, even at 150 concurrent users on one API key. `/health` is
+confirmed never rate-limited (served all requests in both passes).
+
+## Multi-client aggregate validation (2026-11-12)
+
+Pass A/B above used one shared API key, so they only proved the limiter
+protects against a single noisy client — they left open whether many
+*legitimate* concurrent clients would behave differently in aggregate. This
+pass closes that gap.
+
+- Issued 40 separate API keys (`loadtest-multi-01..40`), each its own
+  `client_name` and therefore its own rate-limit bucket.
+  `loadtest/locustfile.py` gained `LOAD_TEST_API_KEYS` (comma-separated)
+  support: simulated users round-robin across the list at spawn time instead
+  of all sharing one key.
+- 120 simulated users (3 per key on average), 2 minutes,
+  `LOAD_TEST_VARY_PARAMS=1` (randomised params — the more realistic,
+  mostly-cache-miss setting), against revision `fin-analytics-api-00017-9lh`.
+- **Locust-reported**: 17,466 requests, **0 failures**, 147 req/s. p50 160ms,
+  p95 390ms, p98 520ms, p99 850ms, one 25.5s outlier.
+- **Cross-checked against Cloud Run's own server-side request logs** (same
+  method as every pass above — the laptop-run `gcloud run services proxy`
+  tunnel inflates Locust's own timing): all 17,595 server-side log lines
+  were `200` — zero 429s, zero 5xx. True server-side latency: p50 120ms,
+  p95 287ms, p98 380ms, p99 466ms, p99.9 1.1s, **true max 2.1s** — the 25.5s
+  Locust outlier was the same proxy artifact, not a real stall. The 10
+  slowest requests all land within the same ~150ms window, i.e. one brief
+  scaling blip at ramp-up, not sustained slowness.
+- 41 distinct `client_name` values appear in the logs: the 40 real keys
+  plus `None` (`/health`, which is unauthenticated and never gets a
+  `client_name`). Every real client got at least one successful response —
+  none was starved while others sailed through.
+- **BigQuery load check** (Cloud Monitoring, `consumed_api` /
+  `bigquery.googleapis.com`): real BigQuery API call rate peaked at ~83
+  req/s during the busiest minute, with zero `403 rateLimitExceeded`
+  responses — close to, but safely under, the ~100 req/s-per-identity
+  ceiling found on 2026-11-10. So this result wasn't "nowhere near the
+  limit" — the backend was genuinely operating near the known ceiling
+  without tripping it, which is the honest way to state the capacity
+  number below.
+- One unrelated, transient event during the warm-up sanity check *before*
+  this pass (not counted in the numbers above): a single Cloud Run
+  platform-level 500 ("aborted after waiting too long for an available
+  instance") during a sharp 4-second ramp to 40 users — a cold-start/
+  autoscaling artifact, not an application bug (same class of issue the
+  original tail-latency investigation solved by preferring gentler ramps).
+  It did not recur in the full 2-minute run.
+
+**Conclusion**: the open caveat from Pass A/B is now closed. 40 independent,
+legitimate clients can transact concurrently, each safely inside its own
+rate-limit budget, with no false 429s and no 5xx, server-side p99 under
+500ms, while real BigQuery traffic ran close to its known ~100 req/s
+ceiling. No bugs found.
+
+**Headline capacity numbers (server-side, this pass)**: ~150 req/s aggregate
+sustained throughput across many clients, p95 < 290ms, p98 < 380ms,
+p99 < 470ms, p99.9 < 1.1s.

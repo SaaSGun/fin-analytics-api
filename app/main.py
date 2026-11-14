@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from google.api_core.exceptions import RetryError
+from google.api_core.exceptions import Forbidden, RetryError
 
 from app.bigquery_client import get_client
 from app.observability import request_logging_middleware, setup_logging
@@ -39,6 +39,20 @@ async def bigquery_retries_exhausted(request: Request, exc: RetryError):
         status_code=503,
         content={"detail": "BigQuery is temporarily overloaded, retry shortly"},
         headers={"Retry-After": "5"},
+    )
+
+
+@app.exception_handler(Forbidden)
+async def bigquery_quota_exceeded(request: Request, exc: Forbidden):
+    # The project's daily query cap (terraform/bigquery.tf) is spent: BigQuery
+    # refuses every query, the API-key lookup included, until midnight Pacific
+    # time. Any other 403 from BigQuery is a real bug and stays a 500.
+    if not any(err.get("reason") == "quotaExceeded" for err in exc.errors):
+        raise exc
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "this demo's daily BigQuery query budget is used up; it resets at midnight Pacific time"},
+        headers={"Retry-After": "3600"},
     )
 
 

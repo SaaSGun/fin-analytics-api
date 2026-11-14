@@ -15,3 +15,9 @@ variable "github_repo" {
   type        = string
   default     = "SaaSGun/fin-analytics-api"
 }
+
+variable "bq_daily_query_cap_gib" {
+  description = "BigQuery query volume (GiB billed) the whole project may use per day - the cost ceiling for the public service"
+  type        = number
+  default     = 200
+}

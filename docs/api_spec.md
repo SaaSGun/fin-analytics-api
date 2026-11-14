@@ -108,6 +108,12 @@ Any data endpoint can return `503` with a `Retry-After` header if BigQuery
 is rate-limiting this service (heavy load) and doesn't recover within
 ~10 seconds. It's transient: retry after the indicated delay.
 
+The project also has a daily BigQuery query cap
+([`terraform/bigquery.tf`](../terraform/bigquery.tf)), the cost ceiling for
+this public demo. Once it's spent, BigQuery refuses every query until
+midnight Pacific time, and requests that need BigQuery return `503` with
+`Retry-After: 3600` instead of a `500`. `/health` keeps answering.
+
 ## 1. `GET /securities/{ticker}` — Security 360 profile (PM, ESG)
 Reference data + latest fundamentals + latest ESG scores + latest close in
 one call — the "security profile" screen a PM or ESG analyst opens first.

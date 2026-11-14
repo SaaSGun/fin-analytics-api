@@ -151,3 +151,23 @@ above, these are **new resources, not imports**, so `terraform plan` shows
 Find them in Metrics Explorer under `logging.googleapis.com/user/fin_api/...`.
 They only count logs written after creation, and only from a revision
 that already runs the structured-logging code.
+
+## Public access and the BigQuery cost cap
+
+Two more new resources, so `terraform plan` shows `2 to add`:
+
+- `google_cloud_run_v2_service_iam_member.public_invoker`
+  (`cloud_run.tf`): `allUsers` may invoke the service, as with the sibling
+  fin-order-management-api. The app's API keys and scopes are the gate.
+- `google_service_usage_consumer_quota_override.bq_daily_query_cap`
+  (`bigquery.tf`): caps the project's BigQuery query usage at
+  `bq_daily_query_cap_gib` per day (default 200 GiB; the two heaviest
+  load-test days billed 169 and 184 GiB). The quota's unit is MiB, hence
+  the `* 1024`. Once spent, BigQuery refuses every query in the project,
+  including your own console queries, until midnight Pacific time, and the
+  API answers `503` (see `app/main.py`).
+
+The quota resource needs the `google-beta` provider, so run `terraform
+init` once before `plan`; it updates `.terraform.lock.hcl`, which should be
+committed. If this quota was ever changed in the console, create fails with
+a 409 because an override already exists; import it first.

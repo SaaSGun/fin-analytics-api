@@ -85,3 +85,14 @@ resource "google_cloud_run_v2_service" "fin_analytics_api" {
     ]
   }
 }
+
+# Public, like the sibling fin-order-management-api: the app's API keys and
+# scopes (app/auth.py) are the gate, and the daily BigQuery query cap in
+# bigquery.tf bounds what any caller can cost.
+resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.fin_analytics_api.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}

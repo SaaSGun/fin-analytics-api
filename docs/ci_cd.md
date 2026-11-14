@@ -67,3 +67,22 @@ secrets, which is why the workflow needs no GitHub secrets at all.
 New IAM bindings can take a minute or two to take effect, so a deploy that
 fails with a permission error right after setup is worth one re-run before
 debugging.
+
+## Manual operations
+
+Live service: `https://fin-analytics-api-1089997989086.europe-west4.run.app`
+(public: the `allUsers` invoker binding is
+`google_cloud_run_v2_service_iam_member.public_invoker` in
+`terraform/cloud_run.tf`; the API key is the gate). To make it private
+again, delete that resource and `terraform apply`.
+
+Manual redeploy (normally CI does this):
+
+```
+gcloud run deploy fin-analytics-api --source . --region europe-west4 --project fin-analytics-api --service-account fin-api-run@fin-analytics-api.iam.gserviceaccount.com --set-env-vars="^@^GCP_PROJECT_ID=fin-analytics-api@BQ_DATASET=fin_analytics@BQ_LOCATION=europe-west4"
+```
+
+Use the `^@^`-delimited form of `--set-env-vars`/`--update-env-vars` from
+PowerShell: a plain comma-separated `KEY=VAL,KEY=VAL` value gets merged by
+`gcloud` into a single mangled env var instead of being split on the commas.
+`^@^` makes `@` the pair delimiter instead.

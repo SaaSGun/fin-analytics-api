@@ -6,6 +6,12 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 6.0"
     }
+    # Only for the BigQuery quota override in bigquery.tf, which the GA
+    # provider doesn't have.
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = "~> 6.0"
+    }
   }
 
   # Bucket must exist before `terraform init` can use it as a backend —
@@ -17,6 +23,11 @@ terraform {
 }
 
 provider "google" {
+  project = var.project_id
+  region  = var.region
+}
+
+provider "google-beta" {
   project = var.project_id
   region  = var.region
 }

@@ -1,173 +1,206 @@
 # Fin Analytics API
 
-A demo investment-management analytics API: BigQuery warehouse + FastAPI
-service, deployed on Cloud Run, modelled on the kind of data a buy-side
-data engineering team assembles from vendor feeds (index/reference data,
-market data, ESG ratings) and internal systems (portfolio accounting), for
-downstream PM and ESG consumption.
+A read-only analytics API for an investment manager's portfolio managers
+and ESG team: security profiles, portfolio holdings, sector exposures,
+performance vs. benchmark, and ESG risk screening. A FastAPI service on
+Google Cloud Run serves it from a BigQuery warehouse.
 
-**Portfolio-project framing**: this exists to showcase GCP (BigQuery +
-Cloud Run), Python, FastAPI, and API design/development skills — not data
-engineering. The data below is a mix of real public sources and synthetic
-data, but that distinction doesn't matter for the project's purpose: the
-premise is a data-engineering teammate already produced clean data in
-BigQuery, and this project picks up from there.
+> **Portfolio project.** This repo shows backend API design and production
+> engineering on GCP: Python, FastAPI, BigQuery, Cloud Run, Terraform and
+> GitHub Actions. The data mixes real public market data with synthetic
+> portfolios. The premise is that a data engineering team has already loaded
+> clean data into BigQuery, and this service exposes it to internal users.
+
+Its transactional (OLTP) counterpart is
+[fin-order-management-api](https://github.com/SaaSGun/fin-order-management-api):
+the write side of the same domain (orders, pre-trade compliance, fills,
+settlement) on PostgreSQL, with the same API conventions.
+
+## Live demo
+
+**https://fin-analytics-api-1089997989086.europe-west4.run.app**
+
+- [`/health`](https://fin-analytics-api-1089997989086.europe-west4.run.app/health) — no auth.
+- [`/docs`](https://fin-analytics-api-1089997989086.europe-west4.run.app/docs) — Swagger UI
+  for every endpoint, its parameters, and the scope it needs.
+
+API keys are deliberately not published in this repo (a key in a public
+repo is effectively public forever). Short-lived evaluation keys are
+issued on request.
+
+## Highlights
+
+- **Domain-driven endpoints.** The 10 endpoints follow real buy-side
+  workflows, such as a PM's sector-tilt check, finding ESG laggards, and
+  screening the investment universe. Each one is tagged by audience in the
+  [API spec](docs/api_spec.md).
+- **Consistent contract.** Every response uses the same envelope. Lists use
+  cursor (keyset) pagination with stable tiebreakers, so pages never skip
+  or repeat a row. The OpenAPI contract is generated from the code, and a
+  snapshot is committed ([`openapi.yaml`](docs/openapi.yaml)) so changes
+  show up in review diffs.
+- **Security in layers.** API keys are stored only as SHA-256 hashes.
+  Scopes separate reference data (`standard:read`) from portfolio
+  positions (`confidential:read`). The service runs as a read-only,
+  least-privilege service account, every query is parameterised, and a
+  daily BigQuery query cap bounds what any caller can cost.
+- **Built for load.** The API caches query results, rate-limits each client
+  with a token bucket (`429` + `Retry-After`), and caps BigQuery retries
+  so an overloaded request fails fast with `503` + `Retry-After` instead of
+  hanging.
+- **Observability.** Logs are structured JSON tied to the Cloud Trace id.
+  Every response, 500s included, carries an `X-Request-ID`. Each BigQuery
+  query logs its cost (bytes processed, slot time), and Terraform defines
+  log-based metrics on top of these logs.
+- **Load-tested in production.** Load tests against the live deployment
+  found a tail-latency problem. After the fix, p99 latency dropped from 34s
+  to 2.6s. The fix was then validated with 40 concurrent clients (see
+  [Performance](#performance)).
+- **Automated delivery.** GitHub Actions runs lint and an offline test suite
+  on every PR, then deploys `main` to Cloud Run. Workload Identity
+  Federation handles authentication, so no credentials are stored in
+  GitHub. Terraform defines the GCP infrastructure.
+
+## Five-minute tour
+
+| Where | What it shows |
+|---|---|
+| [`app/auth.py`](app/auth.py) | Keys stored and looked up only as SHA-256 hashes; `{standard,confidential} × {read,write}` scopes, enforced per router with `require_scopes(...)` |
+| [`app/bigquery_client.py`](app/bigquery_client.py) | Parameterised queries; a bounded, thread-safe result cache that hands out copies; BigQuery retries capped at 10s; one cost log line per billed query |
+| [`app/main.py`](app/main.py) | Exhausted BigQuery retries and a spent daily query cap both become `503` + `Retry-After`, not a hung request or a bare `500` |
+| [`app/rate_limit.py`](app/rate_limit.py) | Per-client token bucket, sized as a cost control: every cache miss is a billed query |
+| [`app/pagination.py`](app/pagination.py) | Opaque keyset cursors instead of `OFFSET` |
+| [`docs/load_test_results.md`](docs/load_test_results.md) | How a 30–120s request tail was traced to BigQuery's per-identity rate limit and silent client retries, and what fixed it |
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph UP["Upstream: stands in for the data team"]
+        SRC["Public data<br/>Wikipedia, Yahoo Finance"] --> ETL["etl/<br/>+ synthetic portfolios"]
+    end
+    ETL --> BQ[("BigQuery")]
+    BQ -->|parameterised SQL| API["FastAPI on Cloud Run<br/>auth · rate limit · cache · logs"]
+    API -->|JSON, cursor-paginated| CLI["PM / ESG clients"]
+    GHA["GitHub Actions<br/>lint + test → deploy"] -.->|keyless WIF| API
+    TF["Terraform"] -.->|IAM, dataset, service config| BQ
+```
+
+## Endpoints
+
+| Endpoint | What it answers | Audience | Scope |
+|---|---|---|---|
+| `GET /securities/{ticker}` | Security profile: reference data, fundamentals, ESG scores and last close in one call | PM, ESG | standard |
+| `GET /securities/{ticker}/prices` | Daily OHLCV history | PM | standard |
+| `GET /portfolios` | Model portfolios with strategy, AUM and benchmark | PM, ESG | confidential |
+| `GET /portfolios/{id}/holdings` | Current holdings, largest weight first | PM | confidential |
+| `GET /portfolios/{id}/exposures` | Sector active weights vs. benchmark | PM | confidential |
+| `GET /portfolios/{id}/performance` | Cumulative return vs. benchmark | PM | confidential |
+| `GET /portfolios/{id}/esg-summary` | AUM-weighted ESG risk vs. benchmark | ESG, PM | confidential |
+| `GET /portfolios/{id}/esg-laggards` | Holdings that add the most ESG risk | ESG | confidential |
+| `GET /esg/screen` | Universe screen by sector, ESG risk and market cap | ESG | standard |
+| `GET /benchmarks/{id}/constituents` | Benchmark constituents and weights | PM | standard |
+
+`/health` (liveness) and `/health/ready` (also checks BigQuery) need no key.
+Every other endpoint returns the same envelope (values below are
+illustrative):
+
+```json
+GET /portfolios/ESG_LEAD/exposures?limit=2
+
+{
+  "data": [
+    {"gics_sector": "Information Technology", "portfolio_weight": 0.34, "benchmark_weight": 0.29, "active_weight": 0.05},
+    {"gics_sector": "Health Care", "portfolio_weight": 0.15, "benchmark_weight": 0.12, "active_weight": 0.03}
+  ],
+  "meta": {"pagination": {"next_cursor": "eyJhY3RpdmVfd2VpZ2h0Ijo...", "limit": 2, "has_more": true}}
+}
+```
+
+For error codes, pagination, caching and the auth model, see
+[`docs/api_spec.md`](docs/api_spec.md).
+
+## Performance
+
+All tests ran against the live Cloud Run deployment (europe-west4,
+1 vCPU / 512 MiB per instance, max 10 instances) using Locust. The later
+runs were also checked against Cloud Run's own server-side request logs.
+
+| Scenario | Result |
+|---|---|
+| Tail-latency fix, 150 users, mostly uncached queries | p99 **34s → 2.6s**, throughput **88 → 166 req/s** |
+| 40 independent clients, 120 users, 2 min | **0 errors**, ~150 req/s, server-side p95 **287ms**, p99 **466ms** |
+| A single client bursting with 150 users | Excess requests got a clean `429`, with no 5xx errors; slowest server-side response 178ms |
+
+**Known limit:** BigQuery accepts about 100 API requests per second from
+one caller identity. That caps how many *uncached* queries the API can
+serve per second. Beyond that, the next step would be precomputing popular
+results or serving from a database built for request traffic. The full
+analysis is in [`docs/load_test_results.md`](docs/load_test_results.md).
 
 ## Data
 
-| Table | Grain | Source | Nature |
-|---|---|---|---|
-| `security_master` | 1 row / ticker | Wikipedia "List of S&P 500 companies" | real |
-| `market_prices` | 1 row / ticker / day | Yahoo Finance (`yfinance`), 2y daily OHLCV | real |
-| `fundamentals` | 1 row / ticker | Yahoo Finance `Ticker.get_info()` snapshot | real |
-| `esg_scores` | 1 row / ticker | Yahoo Finance Sustainalytics-sourced ESG risk scores, with a sector-tilted synthetic fallback where vendor coverage is missing (flagged via `source`) — **as of this build, Yahoo's free ESG endpoint 404s for every ticker, so `source` is `synthetic_fallback` for 100% of rows**; the vendor path is left in place in case Yahoo's coverage returns | synthetic (vendor path currently dead) |
-| `portfolios` | 1 row / fund | generated | synthetic ("house" model portfolios: Core Equity, ESG Leaders, Growth, Value, Dividend Income) |
-| `portfolio_holdings` | 1 row / fund / ticker | generated from real fundamentals/ESG factor tilts | synthetic |
-| `benchmark_weights` | 1 row / ticker | generated (market-cap weighted over the ingested universe) | synthetic |
+The data lives in seven BigQuery tables. [`docs/data_model.md`](docs/data_model.md)
+has the ER diagram and explains the table design.
 
-Real position-level holdings are proprietary to a firm's PMS, so there's no
-OSS dataset for that layer — `generate_portfolios.py` builds plausible model
-portfolios on top of the real security/fundamentals/ESG data instead.
+| Table | Contents | Source |
+|---|---|---|
+| `security_master` | S&P 500 constituents and GICS sectors | Wikipedia (real) |
+| `market_prices` | 2 years of daily OHLCV | Yahoo Finance (real) |
+| `fundamentals` | Valuation and risk snapshot | Yahoo Finance (real) |
+| `esg_scores` | Total and E/S/G risk scores | Synthetic, sector-tilted ¹ |
+| `portfolios`, `portfolio_holdings` | 5 model portfolios (Core Equity, ESG Leaders, Growth, Value, Dividend Income) | Synthetic, built on real fundamentals |
+| `benchmark_weights` | Market-cap-weighted benchmark | Synthetic |
 
-See [`docs/data_model.md`](docs/data_model.md) for the ER diagram and the
-rationale behind this table shape.
+¹ The pipeline is written to pull vendor ESG scores from Yahoo Finance.
+Yahoo's free ESG endpoint currently returns no data, so every row uses the
+synthetic fallback, marked in the `source` column. Real position-level
+holdings are proprietary, so the portfolios are generated on top of the
+real security data.
 
-## Setup
+## Tech stack
 
-GCP project `fin-analytics-api` (org `saurabhgunecha-org`) already has
-billing linked and the BigQuery API enabled. Python env:
+**Service:** Python 3.12, FastAPI, Pydantic, google-cloud-bigquery ·
+**Cloud:** BigQuery, Cloud Run, Cloud Build, Artifact Registry, Cloud Logging ·
+**Infrastructure and delivery:** Terraform, GitHub Actions, Workload Identity Federation ·
+**Quality:** pytest, ruff, Locust
 
-```
-C:\apps\anaconda\fin_api\python.exe   # conda env "fin_api"; created under C:\apps\anaconda
-                                       # because venvs/conda envs under the user profile or
-                                       # OneDrive path are blocked by this machine's group policy
-```
-
-## Running the pipeline
+## Repository layout
 
 ```
-C:\apps\anaconda\fin_api\python.exe etl\run_pipeline.py 100
+app/        FastAPI service: routers, auth, rate limiting, pagination, observability
+etl/        Pipeline: fetch public data, generate portfolios, load BigQuery
+tests/      Offline pytest suite (BigQuery calls are mocked)
+terraform/  GCP infrastructure: IAM, Workload Identity, BigQuery, Cloud Run, log metrics
+loadtest/   Locust scenarios
+scripts/    API key management, OpenAPI export
+docs/       API spec, data model, CI/CD, Terraform, load-test results
 ```
 
-`100` = number of S&P 500 tickers to pull (full universe is 503; omit for
-the default of 100, pass `0` to `fetch_market_data.py`/`fetch_fundamentals.py`/
-`fetch_esg_scores.py` directly for all 503 — slower, one HTTP call per
-ticker for fundamentals/ESG). Steps, runnable individually from `etl/`:
+## Running locally
 
-1. `fetch_security_master.py` — scrape + clean the S&P 500 constituent list
-2. `fetch_market_data.py --limit N --period 2y` — daily OHLCV
-3. `fetch_fundamentals.py --limit N` — valuation/risk snapshot
-4. `fetch_esg_scores.py --limit N` — ESG risk scores (vendor + synthetic fallback)
-5. `generate_portfolios.py` — synthetic model portfolios/holdings/benchmark
-6. `load_bigquery.py` — loads all `data/processed/*.parquet` into BigQuery,
-   `WRITE_TRUNCATE` per table
-
-## Running the API
-
-```
-C:\apps\anaconda\fin_api\python.exe -m uvicorn main:app --reload
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+cp .env.example .env                  # GCP project, dataset, location
+python etl/run_pipeline.py            # fetch data, build portfolios, load BigQuery
+python scripts/manage_api_keys.py create --client-name local --scopes standard:read,confidential:read
+uvicorn main:app --reload             # Swagger UI at http://localhost:8000/docs
+pytest                                # fully offline, no GCP credentials needed
 ```
 
-Then open `http://localhost:8000/docs` for interactive Swagger UI, or see
-[`docs/api_spec.md`](docs/api_spec.md) for the endpoint-by-endpoint design
-spec (10 endpoints across security profiles, portfolio holdings/exposure/
-performance, and ESG summary/screening — tagged by which are aimed at
-portfolio managers vs. the ESG team).
+The pipeline and the API need Google Cloud application-default credentials
+with access to the BigQuery dataset. The test suite does not.
 
-The API is code-first (contract generated from the FastAPI routes, not
-hand-written up front); a committed snapshot of that generated OpenAPI
-contract lives at [`docs/openapi.yaml`](docs/openapi.yaml) — regenerate it
-after any route/model change with:
+## Deployment
 
-```
-PYTHONPATH=. python scripts/export_openapi.py
-```
+Each push to `main` is deployed to Cloud Run in `europe-west4` once lint
+and tests pass. Anyone can reach the service; the API key and its scopes
+decide what a caller gets, and a daily BigQuery query cap (set in
+Terraform) keeps the cost bounded. It runs as a service account with
+read-only BigQuery access.
+Pipeline and keyless-auth details are in [`docs/ci_cd.md`](docs/ci_cd.md),
+and infrastructure details are in [`docs/terraform.md`](docs/terraform.md).
 
-## Running tests
+## License
 
-```
-C:\apps\anaconda\fin_api\python.exe -m pip install -r requirements-dev.txt
-C:\apps\anaconda\fin_api\python.exe -m pytest
-```
-
-`tests/` is a pytest suite (`conftest.py` + one file per router/module)
-covering auth scope checks, cursor pagination edge cases, and every
-endpoint's success/404/403 paths. No live GCP credentials or network
-access are needed — BigQuery calls (`run_query`, `get_portfolio_meta`,
-the API-key cache) are monkeypatched per test, so the suite runs fully
-offline against canned pandas `DataFrame`s.
-
-Lint with `C:\apps\anaconda\fin_api\python.exe -m ruff check .` (config in
-`ruff.toml`).
-
-## CI/CD
-
-GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs
-ruff + pytest on every push and PR, and deploys to Cloud Run on pushes to
-`main` only after both pass. GCP auth is keyless (Workload Identity
-Federation, no stored service-account key). Details and one-time setup:
-[`docs/ci_cd.md`](docs/ci_cd.md).
-
-## Infrastructure as Code
-
-The GCP setup (service accounts, project IAM bindings, Workload Identity
-Federation, BigQuery dataset, Cloud Run's static config) is codified in
-[`terraform/`](terraform/) rather than living only in `gcloud` command
-history. It deliberately doesn't manage the deployed container
-image/revision (CI/CD owns that) or table schemas/rows (the ETL scripts
-own those). Setup and import instructions: [`docs/terraform.md`](docs/terraform.md).
-
-## Deployment (Cloud Run)
-
-Live at `https://fin-analytics-api-1089997989086.europe-west4.run.app`,
-running as the least-privilege service account
-`fin-api-run@fin-analytics-api.iam.gserviceaccount.com`
-(`roles/bigquery.dataViewer` + `roles/bigquery.jobUser` — read-only, no
-write access). The service currently **requires authentication** (no
-`allUsers` invoker binding), so calling it needs an identity token or an
-authenticated tunnel:
-
-There are two independent auth layers: Cloud Run IAM below gates whether
-you can reach the service at all (all-or-nothing per caller); once past
-that, every route except `/health*` also requires an `X-API-Key` header
-scoped to `standard:read` and/or `confidential:read` — see
-[`docs/api_spec.md`](docs/api_spec.md#authentication--authorization) and
-[`scripts/manage_api_keys.py`](scripts/manage_api_keys.py) for issuing
-keys. The deployed service account needs no extra IAM role for this —
-it only ever `SELECT`s the `api_keys` table, already covered by its
-existing `bigquery.dataViewer` role.
-
-```
-gcloud run services proxy fin-analytics-api --region europe-west4 --project fin-analytics-api
-```
-
-To make it public later (e.g. to share as a portfolio link):
-
-```
-gcloud run services add-iam-policy-binding fin-analytics-api \
-  --region europe-west4 --project fin-analytics-api \
-  --member=allUsers --role=roles/run.invoker
-```
-
-To redeploy after a code change:
-
-```
-gcloud run deploy fin-analytics-api --source . --region europe-west4 \
-  --project fin-analytics-api \
-  --service-account fin-api-run@fin-analytics-api.iam.gserviceaccount.com \
-  --set-env-vars="^@^GCP_PROJECT_ID=fin-analytics-api@BQ_DATASET=fin_analytics@BQ_LOCATION=europe-west4"
-```
-
-Note the `^@^`-delimited form of `--set-env-vars`: on this machine, passing a
-plain comma-separated `KEY=VAL,KEY=VAL` value through PowerShell caused
-`gcloud` to merge all three pairs into a single mangled env var instead of
-splitting on the commas. The `^@^...@...` syntax tells `gcloud` to use `@` as
-the pair delimiter instead, which avoids it — use this form for any future
-`--set-env-vars`/`--update-env-vars` call from PowerShell.
-
-This builds the `Dockerfile` via Cloud Build and pushes to Artifact
-Registry automatically — no local Docker required. The image only bundles
-`app/` + `main.py` (see `.dockerignore`) and installs
-`requirements-app.txt`, a runtime-only subset of `requirements.txt` (the
-ETL-only deps like `yfinance`/`lxml`/`beautifulsoup4` aren't needed to
-serve the API).
+MIT
