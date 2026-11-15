@@ -55,14 +55,18 @@ def test_requiring_multiple_scopes_needs_all_of_them(fake_key_cache):
 
 
 def test_load_keys_parses_rows_into_scope_sets(monkeypatch):
-    row = MagicMock(key_hash="deadbeef", client_name="acme", scopes=["standard:read", "confidential:read"])
+    row = MagicMock(
+        key_hash="deadbeef", client_name="acme", scopes=["standard:read", "confidential:read"], expires_at=None
+    )
     fake_client = MagicMock()
     fake_client.query.return_value.result.return_value = [row]
     monkeypatch.setattr("app.auth.get_client", lambda: fake_client)
 
     keys = _load_keys()
 
-    assert keys == {"deadbeef": {"client_name": "acme", "scopes": {"standard:read", "confidential:read"}}}
+    assert keys == {
+        "deadbeef": {"client_name": "acme", "scopes": {"standard:read", "confidential:read"}, "expires_at": None}
+    }
 
 
 def test_load_keys_table_not_found_returns_empty(monkeypatch):
