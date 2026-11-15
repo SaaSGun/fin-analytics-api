@@ -48,7 +48,10 @@ to 20 (`RATE_LIMIT_PER_SECOND` / `RATE_LIMIT_BURST` env vars; see
 with a `Retry-After` header. Limits are tracked per Cloud Run instance, so
 a client spread over several instances can exceed its nominal limit. That's
 accepted here: the limiter is mainly a cost brake on BigQuery queries, not
-a hard quota. `/health*` is not rate-limited.
+a hard quota. `/health` is not rate-limited. `/health/ready` needs no key
+but runs a BigQuery query, so it gets the same limit per caller IP (per
+/64 network for IPv6), taken from the last `X-Forwarded-For` entry, which
+Google's front end appends.
 
 ## Request IDs & logging
 

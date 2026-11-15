@@ -5,6 +5,7 @@ from google.api_core.exceptions import Forbidden, RetryError
 
 from app.bigquery_client import get_client
 from app.observability import request_logging_middleware, setup_logging
+from app.rate_limit import caller_ip, check_rate_limit
 from app.routers import benchmarks, esg, portfolios, securities
 
 setup_logging()
@@ -68,7 +69,11 @@ def health():
 
 
 @app.get("/health/ready", tags=["meta"])
-def health_ready():
+def health_ready(request: Request):
+    # Public and keyless, but every call is a BigQuery API request, so cap it
+    # per caller IP: BigQuery allows about 100 API requests/s for the whole
+    # service, and one caller shouldn't be able to use that up.
+    check_rate_limit(f"ip:{caller_ip(request)}")
     try:
         get_client().query("SELECT 1").result(timeout=5)
     except Exception as exc:
