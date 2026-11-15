@@ -57,7 +57,7 @@ Google's front end appends.
 
 Every response carries an `X-Request-ID` header, echoing the caller's own
 `X-Request-ID` if it sent one. Each request writes one structured JSON log
-line (method, URL, status, latency, client, request id), and each billed
+line (method, URL, status, latency, client, caller IP, request id), and each billed
 BigQuery query writes another (bytes processed, slot time, duration, job
 id). Both are tied to the request's Cloud Trace id, so they group under
 the request in Cloud Logging. See
@@ -213,6 +213,8 @@ sorted by weight descending.
   touched); `/health/ready` additionally runs a trivial BigQuery query and
   returns `503` if the warehouse is unreachable, so dashboards that need to
   know "can this API actually serve data" should poll that one instead.
+  Its result is cached for 5 seconds per instance, so it can lag a
+  BigQuery outage or recovery by up to 5 seconds.
 - An invalid/malformed `cursor` returns `400 {"detail": "invalid cursor"}`.
 - Dates are ISO `YYYY-MM-DD`. All weights are fractions (0–1), not
   percentages.

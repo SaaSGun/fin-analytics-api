@@ -1,3 +1,6 @@
+import threading
+import time
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -5,7 +8,7 @@ from google.api_core.exceptions import Forbidden, RetryError
 
 from app.bigquery_client import get_client
 from app.observability import request_logging_middleware, setup_logging
-from app.rate_limit import caller_ip, check_rate_limit
+from app.rate_limit import check_rate_limit, rate_limit_ip
 from app.routers import benchmarks, esg, portfolios, securities
 
 setup_logging()
@@ -68,14 +71,30 @@ def health():
     return {"status": "ok"}
 
 
+# The readiness check's last result, shared by every caller on this instance.
+_READY_TTL_SECONDS = 5
+_ready_lock = threading.Lock()
+_ready_checked_at = float("-inf")
+_ready_error: str | None = None
+
+
 @app.get("/health/ready", tags=["meta"])
 def health_ready(request: Request):
-    # Public and keyless, but every call is a BigQuery API request, so cap it
-    # per caller IP: BigQuery allows about 100 API requests/s for the whole
-    # service, and one caller shouldn't be able to use that up.
-    check_rate_limit(f"ip:{caller_ip(request)}")
-    try:
-        get_client().query("SELECT 1").result(timeout=5)
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"BigQuery unreachable: {exc}") from exc
+    # Public and keyless, but the check is a BigQuery API request, and
+    # BigQuery allows about 100 API requests/s for the whole service. Two
+    # guards: a per-IP limit stops one caller hammering it, and the 5s cache
+    # keeps it to one BigQuery call per 5s per instance however many IPs call.
+    global _ready_checked_at, _ready_error
+    check_rate_limit(f"ip:{rate_limit_ip(request)}")
+    with _ready_lock:  # callers queued behind a running check reuse its result
+        if time.monotonic() - _ready_checked_at >= _READY_TTL_SECONDS:
+            try:
+                get_client().query("SELECT 1").result(timeout=5)
+                _ready_error = None
+            except Exception as exc:  # noqa: BLE001 - any failure means not ready
+                _ready_error = f"BigQuery unreachable: {exc}"
+            _ready_checked_at = time.monotonic()
+        error = _ready_error
+    if error:
+        raise HTTPException(status_code=503, detail=error)
     return {"status": "ok"}

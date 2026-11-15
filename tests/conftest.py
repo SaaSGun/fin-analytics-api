@@ -25,6 +25,12 @@ def fake_key_cache(monkeypatch):
     monkeypatch.setattr("app.auth._cached_keys", lambda: _KEY_RECORDS)
 
 
+@pytest.fixture(autouse=True)
+def _reset_ready_cache(monkeypatch):
+    # /health/ready caches its result for 5s; each test needs a fresh check.
+    monkeypatch.setattr("app.main._ready_checked_at", float("-inf"))
+
+
 @pytest.fixture
 def client():
     return TestClient(app)

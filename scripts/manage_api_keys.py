@@ -9,8 +9,13 @@ table.
 
 Usage:
   python scripts/manage_api_keys.py create --client-name "dashboard-backend" --scopes standard:read,confidential:read
+  python scripts/manage_api_keys.py create --client-name "reviewer-alice" --scopes standard:read,confidential:read --days 7
   python scripts/manage_api_keys.py list
   python scripts/manage_api_keys.py revoke --client-name "dashboard-backend"
+
+Every command except revoke first makes sure the table exists and has the
+`expires_at` column (added after launch). Run `list` once before deploying
+an app/auth.py that reads that column.
 """
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ import argparse
 import hashlib
 import secrets
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -35,9 +41,12 @@ def table_id() -> str:
     return f"{settings.gcp_project_id}.{settings.bq_dataset}.api_keys"
 
 
+_EXPIRES_AT = bigquery.SchemaField("expires_at", "TIMESTAMP", mode="NULLABLE")  # NULL = never expires
+
+
 def ensure_table(client: bigquery.Client) -> None:
     try:
-        client.get_table(table_id())
+        table = client.get_table(table_id())
     except NotFound:
         schema = [
             bigquery.SchemaField("key_hash", "STRING", mode="REQUIRED"),
@@ -45,9 +54,16 @@ def ensure_table(client: bigquery.Client) -> None:
             bigquery.SchemaField("scopes", "STRING", mode="REPEATED"),
             bigquery.SchemaField("active", "BOOL", mode="REQUIRED"),
             bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
+            _EXPIRES_AT,
         ]
         client.create_table(bigquery.Table(table_id(), schema=schema))
         print(f"created table {table_id()}")
+        return
+    if _EXPIRES_AT.name not in {field.name for field in table.schema}:
+        # Nullable, so existing keys keep working (they never expire).
+        table.schema = [*table.schema, _EXPIRES_AT]
+        client.update_table(table, ["schema"])
+        print(f"added column expires_at to {table_id()}")
 
 
 def cmd_create(args: argparse.Namespace) -> None:
@@ -58,6 +74,7 @@ def cmd_create(args: argparse.Namespace) -> None:
 
     raw_key = f"bwfin_{secrets.token_urlsafe(32)}"
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    expires_at = datetime.now(UTC) + timedelta(days=args.days) if args.days is not None else None
 
     client = bigquery.Client(project=get_settings().gcp_project_id)
     ensure_table(client)
@@ -66,31 +83,35 @@ def cmd_create(args: argparse.Namespace) -> None:
     # would make an immediate `revoke` after `create` silently no-op.
     client.query(
         f"""
-        INSERT INTO `{table_id()}` (key_hash, client_name, scopes, active, created_at)
-        VALUES (@key_hash, @client_name, @scopes, TRUE, CURRENT_TIMESTAMP())
+        INSERT INTO `{table_id()}` (key_hash, client_name, scopes, active, created_at, expires_at)
+        VALUES (@key_hash, @client_name, @scopes, TRUE, CURRENT_TIMESTAMP(), @expires_at)
         """,
         job_config=bigquery.QueryJobConfig(
             query_parameters=[
                 bigquery.ScalarQueryParameter("key_hash", "STRING", key_hash),
                 bigquery.ScalarQueryParameter("client_name", "STRING", args.client_name),
                 bigquery.ArrayQueryParameter("scopes", "STRING", scopes),
+                bigquery.ScalarQueryParameter("expires_at", "TIMESTAMP", expires_at),
             ]
         ),
     ).result()
 
     print("API key created - copy it now, it will not be shown again:")
     print(raw_key)
-    print(f"client: {args.client_name}  scopes: {scopes}")
+    print(f"client: {args.client_name}  scopes: {scopes}  expires_at: {expires_at or 'never'}")
 
 
 def cmd_list(args: argparse.Namespace) -> None:
     client = bigquery.Client(project=get_settings().gcp_project_id)
     ensure_table(client)
     rows = client.query(
-        f"SELECT client_name, scopes, active, created_at FROM `{table_id()}` ORDER BY created_at DESC"
+        f"SELECT client_name, scopes, active, created_at, expires_at FROM `{table_id()}` ORDER BY created_at DESC"
     ).result()
     for row in rows:
-        print(f"{row.client_name:<30} active={row.active}  scopes={row.scopes}  created_at={row.created_at}")
+        print(
+            f"{row.client_name:<30} active={row.active}  scopes={row.scopes}  "
+            f"created_at={row.created_at}  expires_at={row.expires_at or 'never'}"
+        )
 
 
 def cmd_revoke(args: argparse.Namespace) -> None:
@@ -111,6 +132,7 @@ def main() -> None:
     p_create = sub.add_parser("create", help="issue a new API key")
     p_create.add_argument("--client-name", required=True)
     p_create.add_argument("--scopes", required=True, help="comma-separated, e.g. standard:read,confidential:read")
+    p_create.add_argument("--days", type=int, default=None, help="expire the key after N days (default: never)")
     p_create.set_defaults(func=cmd_create)
 
     p_list = sub.add_parser("list", help="list all key records (hashes are never shown)")

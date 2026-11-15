@@ -8,12 +8,14 @@ Routes declare what they require via `require_scopes(...)`.
 Keys are looked up by SHA-256 hash; the raw key is never persisted.
 Granted scopes are cached in memory and refreshed every CACHE_TTL_SECONDS,
 so a newly revoked key can stay valid on an already-warm instance for up
-to that long.
+to that long. Expiry (`expires_at`) is checked on every request instead,
+so a key stops working at its expiry time.
 """
 from __future__ import annotations
 
 import hashlib
 import time
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, Security
 from fastapi.security import APIKeyHeader
@@ -43,11 +45,14 @@ def _load_keys() -> dict[str, dict]:
     table = f"{settings.gcp_project_id}.{settings.bq_dataset}.api_keys"
     try:
         rows = get_client().query(
-            f"SELECT key_hash, client_name, scopes FROM `{table}` WHERE active"
+            f"SELECT key_hash, client_name, scopes, expires_at FROM `{table}` WHERE active"
         ).result()
     except NotFound:
         return {}
-    return {row.key_hash: {"client_name": row.client_name, "scopes": set(row.scopes)} for row in rows}
+    return {
+        row.key_hash: {"client_name": row.client_name, "scopes": set(row.scopes), "expires_at": row.expires_at}
+        for row in rows
+    }
 
 
 def _cached_keys() -> dict[str, dict]:
@@ -68,6 +73,9 @@ def require_scopes(*required_scopes: str):
         record = _cached_keys().get(hash_key(api_key))
         if record is None:
             raise HTTPException(status_code=401, detail="invalid API key")
+        expires_at = record.get("expires_at")
+        if expires_at is not None and expires_at <= datetime.now(UTC):
+            raise HTTPException(status_code=401, detail="API key expired")
         set_client_name(record["client_name"])
         if not required.issubset(record["scopes"]):
             raise HTTPException(status_code=403, detail="insufficient scope")

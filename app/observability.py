@@ -27,6 +27,7 @@ from fastapi import Request
 from fastapi.responses import PlainTextResponse
 
 from app.config import get_settings
+from app.rate_limit import client_ip
 
 logger = logging.getLogger("app.requests")
 
@@ -95,7 +96,7 @@ async def request_logging_middleware(request: Request, call_next):
                         "status": status,
                         "latency": f"{time.perf_counter() - start:.3f}s",
                         "userAgent": request.headers.get("user-agent"),
-                        "remoteIp": request.client.host if request.client else None,
+                        "remoteIp": client_ip(request),
                     },
                 }
             },

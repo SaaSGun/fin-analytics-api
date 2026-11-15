@@ -32,8 +32,11 @@ settlement) on PostgreSQL, with the same API conventions.
 [![Swagger UI of the live API: 10 endpoints grouped by securities, portfolios, ESG and benchmarks](docs/images/swagger-ui.png)](https://fin-analytics-api-1089997989086.europe-west4.run.app/docs)
 
 API keys are deliberately not published in this repo (a key in a public
-repo is effectively public forever). Short-lived evaluation keys are
-issued on request. With one:
+repo is effectively public forever). Evaluation keys, which expire after
+a week, are issued on request, together with the
+[playground notebook](https://github.com/SaaSGun/fin-api-playground).
+It runs guided scenarios against this API and the order-management API
+from Colab. With a key:
 
 ```bash
 curl -H "X-API-Key: <your-key>" \

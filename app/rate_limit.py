@@ -6,7 +6,7 @@ RATE_LIMIT_PER_SECOND. Every request spends one token; an empty bucket
 means 429 + Retry-After. The main point is cost control: every request
 that misses the result cache is a billed BigQuery query. The public
 /health/ready check has no client, so it gets a bucket per caller IP
-(see caller_ip).
+(see rate_limit_ip).
 
 State is in memory per Cloud Run instance, not shared. A client whose
 requests are spread over N instances can get up to N x its nominal limit
@@ -30,18 +30,26 @@ _lock = threading.Lock()  # route dependencies run in the threadpool
 _MAX_BUCKETS = 10_000
 
 
-def caller_ip(request: Request) -> str:
-    """The caller's IP address, or its /64 network for IPv6.
+def client_ip(request: Request) -> str:
+    """The caller's real IP address.
 
     On Cloud Run, request.client is Cloud Run's internal proxy (169.254.x.x),
     the same for every caller. Google's front end appends the address it got
     the request from to X-Forwarded-For, so the last entry is the real
-    caller; anything before it came from the caller and can be forged. An
-    IPv6 host usually controls a whole /64, so the limit applies per /64.
+    caller; anything before it came from the caller and can be forged.
     """
     ip = request.headers.get("x-forwarded-for", "").split(",")[-1].strip()
     if not ip:  # not behind Cloud Run, e.g. local uvicorn
         ip = request.client.host if request.client else "unknown"
+    return ip
+
+
+def rate_limit_ip(request: Request) -> str:
+    """client_ip, or its /64 network for IPv6, as the identity to rate-limit.
+
+    An IPv6 host usually controls a whole /64, so the limit applies per /64.
+    """
+    ip = client_ip(request)
     try:
         addr = ipaddress.ip_address(ip)
     except ValueError:
