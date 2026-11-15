@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -52,6 +53,26 @@ def test_requiring_multiple_scopes_needs_all_of_them(fake_key_cache):
     with pytest.raises(HTTPException) as exc_info:
         dependency(api_key=STANDARD_KEY)
     assert exc_info.value.status_code == 403
+
+
+def test_expired_key_raises_401_but_unexpired_key_works(monkeypatch):
+    now = datetime.now(UTC)
+    records = {
+        hash_key("expired-key"): {
+            "client_name": "expired-client", "scopes": {"standard:read"}, "expires_at": now - timedelta(seconds=1)
+        },
+        hash_key("unexpired-key"): {
+            "client_name": "unexpired-client", "scopes": {"standard:read"}, "expires_at": now + timedelta(days=1)
+        },
+    }
+    monkeypatch.setattr("app.auth._cached_keys", lambda: records)
+    dependency = require_scopes("standard:read")
+
+    with pytest.raises(HTTPException) as exc_info:
+        dependency(api_key="expired-key")
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "API key expired"
+    assert dependency(api_key="unexpired-key") == "unexpired-client"
 
 
 def test_load_keys_parses_rows_into_scope_sets(monkeypatch):
