@@ -1,5 +1,10 @@
 # Fin Analytics API
 
+[![CI/CD](https://github.com/SaaSGun/fin-analytics-api/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SaaSGun/fin-analytics-api/actions/workflows/ci.yml)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
+![Cloud Run](https://img.shields.io/badge/deployed%20on-Cloud%20Run-4285F4)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 A read-only analytics API for an investment manager's portfolio managers
 and ESG team: security profiles, portfolio holdings, sector exposures,
 performance vs. benchmark, and ESG risk screening. A FastAPI service on
@@ -24,9 +29,16 @@ settlement) on PostgreSQL, with the same API conventions.
 - [`/docs`](https://fin-analytics-api-1089997989086.europe-west4.run.app/docs) — Swagger UI
   for every endpoint, its parameters, and the scope it needs.
 
+[![Swagger UI of the live API: 10 endpoints grouped by securities, portfolios, ESG and benchmarks](docs/images/swagger-ui.png)](https://fin-analytics-api-1089997989086.europe-west4.run.app/docs)
+
 API keys are deliberately not published in this repo (a key in a public
 repo is effectively public forever). Short-lived evaluation keys are
-issued on request.
+issued on request. With one:
+
+```bash
+curl -H "X-API-Key: <your-key>" \
+  https://fin-analytics-api-1089997989086.europe-west4.run.app/securities/AAPL
+```
 
 ## Highlights
 
